@@ -1,0 +1,197 @@
+3. A company uses AWS Organizations to centrally manage multiple AWS accounts for different departments. 
+The management account owns an Amazon S3 bucket that stores project reports.
+The company wants to restrict access to this S3 bucket so that only users from accounts within the same AWS Organization can access it, while also aiming to minimize operational overhead.
+
+Goal: Ensure that only accounts within the AWS Organization can access the S3 bucket, with minimal operational overhead.
+
+A. Add the aws:PrincipalOrgID global condition key with a reference to the organization ID to the S3 bucket policy.
+
+aws:PrincipalOrgID is a global condition key that can be used in resource-based policies like S3 bucket policies.
+
+It allows access only to principals (IAM users, roles, etc.) that belong to accounts within a specific AWS Organization.
+
+This approach requires no per-account, per-user, or per-tag management, making it the most scalable and low-maintenance solution.
+
+Example S3 Bucket Policy:
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::my-org-bucket",
+        "arn:aws:s3:::my-org-bucket/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalOrgID": "o-1234567890"
+        }
+      }
+    }
+  ]
+}
+
+Why not the other options?
+
+B. aws:PrincipalOrgPaths – Requires managing Organizational Units (OUs) and updating the policy if OUs change; more complex.
+C. CloudTrail-based approach – Reactive and manual; introduces significant overhead.
+D. aws:PrincipalTag – Requires tagging each user and managing those tags, which adds operational burden.
+
+
+
+4. An application runs on an Amazon EC2 instance in a VPC. 
+   The application processes logs that are stored in an Amazon S3 bucket. 
+   The EC2 instance needs to access the S3 bucket without connectivity to the internet.
+   Which solution will provide private network connectivity to Amazon S3?
+
+A. Create a gateway VPC endpoint to the S3 bucket.
+B. Stream the logs to Amazon CloudWatch Logs. Export the logs to the S3 bucket.
+C. Create an instance profile on Amazon EC2 to allow S3 access.
+D. Create an Amazon API Gateway API with a private link to access the S3 endpoint
+
+Goal: The EC2 instance must connect without internet access
+A: A gateway VPC endpoint is a private connection between a VPC and AWS services (like S3 or DynamoDB), without needing an internet gateway, NAT gateway, or VPN.
+It allows EC2 instances in private subnets to securely access S3 over the AWS network, without traversing the public internet.
+This solution is fully managed, scalable, and adds no cost for data transfer between the VPC and S3 (within the same region).
+
+VPC Gateway Endpoint:
+For S3 and DynamoDB only. Provides scalable, fault-tolerant private access inside a VPC.
+
+VPC Interface Endpoint (PrivateLink):
+Used for most other AWS services (SNS, SQS, KMS, etc.), via an ENI in the subnet.
+
+NAT Gateway vs VPC Endpoint:
+NAT = enables internet-bound traffic from private subnets. Costly, and doesn’t satisfy the no internet requirement.
+VPC Endpoint = secure, private, no internet involved.
+
+Financial institutions: Banks often forbid direct internet connectivity from compute nodes. They rely on VPC endpoints for S3 to store transaction logs, while keeping workloads inside private subnets.
+Healthcare companies: HIPAA-compliant architectures commonly use VPC endpoints for medical data storage in S3.
+
+
+
+5. A company is hosting a web application on AWS using a single Amazon EC2 instance that stores user-uploaded documents in an Amazon EBS volume. 
+   For better scalability and availability, the company duplicated the architecture and created a second EC2 instance and EBS volume in another Availability Zone, placing both behind an Application Load Balancer. 
+   After completing this change, users reported that, each time they refreshed the website, they could see one subset of their documents or the other, but never all of the documents at the same time.
+   What should a solutions architect propose to ensure users see all of their documents at once?
+
+A. Copy the data so both EBS volumes contain all the documents
+B. Configure the Application Load Balancer to direct a user to the server with the documents
+C. Copy the data from both EBS volumes to Amazon EFS. Modify the application to save new documents to Amazon EFS
+D. Configure the Application Load Balancer to send the request to both servers. Return each document from the correct server
+
+Problem: Each server stores uploads on its own local EBS → users see different files depending on which server the load balancer routes them to.
+
+C: Amazon EFS is a managed, elastic file system that can be mounted by multiple EC2 instances across multiple AZs.
+With EFS: All servers read/write to the same shared file system. Users see a consistent set of documents regardless of which EC2 instance they land on.
+
+EBS volumes are AZ-scoped and not shareable across AZs
+EBS (Elastic Block Store): Block storage tied to a single AZ. Great for one instance, not for shared storage.
+EFS (Elastic File System): Shared NFS file system, accessible from multiple EC2s across AZs. Scales automatically.
+Stateless web design: Web/app tiers should be stateless. Shared data (like user uploads) should live in a common backend store (EFS or S3).
+
+https://docs.aws.amazon.com/whitepapers/latest/best-practices-wordpress/reference-architecture.html
+
+
+6. A company uses NFS to store large video files in on-premises network attached storage. 
+   Each video file ranges in size from 1 MB to 500 GB. The total storage is 70 TB and is no longer growing. 
+   The company decides to migrate the video files to Amazon S3. The company must migrate the video files as soon as possible while using the least possible network bandwidth.
+   Which solution will meet these requirements?
+
+A. Create an S3 bucket. Create an IAM role that has permissions to write to the S3 bucket. Use the AWS CLI to copy all files locally to the S3 bucket.
+B. Create an AWS Snowball Edge job. Receive a Snowball Edge device on premises. Use the Snowball Edge client to transfer data to the device. Return the device so that AWS can import the data into Amazon S3.
+C. Deploy an S3 File Gateway on premises. Create a public service endpoint to connect to the S3 File Gateway. Create an S3 bucket. Create a new NFS file share on the S3 File Gateway. Point the new file share to the S3 bucket. Transfer the data from the existing NFS file share to the S3 File Gateway.
+D. Set up an AWS Direct Connect connection between the on-premises network and AWS. Deploy an S3 File Gateway on premises. Create a public virtual interface (VIF) to connect to the S3 File Gateway. Create an S3 bucket. Create a new NFS file share on the S3 File Gateway. Point the new file share to the S3 bucket. Transfer the data from the existing NFS file share to the S3 File Gateway.
+
+Goal: Migrate as soon as possible while using the least possible network bandwidth.
+
+B:AWS Snowball Edge (Storage Optimized model) can hold up to 210 TB usable capacity in one device, which is more than enough for the 70 TB dataset.
+Data is copied locally at high speed into the device using the Snowball Edge client (no internet bottleneck).
+
+AWS Snowball Edge: A physical appliance for offline migration of TB–PB scale data. Comes in Storage Optimized (210 TB) and Compute Optimized variants. Designed for cases where the network is too slow, costly, or unavailable.
+
+S3 File Gateway: A hybrid storage service exposing S3 as an NFS/SMB share. Useful for ongoing workloads, but transfers data over the internet.
+
+
+7.A company has an application that ingests incoming messages. Dozens of other applications and microservices then quickly consume these messages. 
+  The number of messages varies drastically and sometimes increases suddenly to 100,000 each second. The company wants to decouple the solution and increase scalability.
+  Which solution meets these requirements?
+
+A. Persist the messages to Amazon Kinesis Data Analytics. Configure the consumer applications to read and process the messages.
+B. Deploy the ingestion application on Amazon EC2 instances in an Auto Scaling group to scale the number of EC2 instances based on CPU metrics.
+C. Write the messages to Amazon Kinesis Data Streams with a single shard. Use an AWS Lambda function to preprocess messages and store them in Amazon DynamoDB. Configure the consumer applications to read from DynamoDB to process the messages.
+D. Publish the messages to an Amazon Simple Notification Service (Amazon SNS) topic with multiple Amazon Simple Queue Service (Amazon SOS) subscriptions. Configure the consumer applications to process the messages from the queues.
+
+D:Decouples producers from many consumers (pub/sub) and lets each consumer process at its own pace.
+Scales massively: SNS can fan out to many SQS queues; SQS scales horizontally with batching and parallel readers (nearly unlimited throughput).
+
+SNS→SQS fan-out: One publish → many queues → each microservice has its own queue (isolation, retry, DLQs). Officially recommended for asynchronous multi-subscriber delivery. 
+
+SQS scalability: Horizontally scale consumers; batch APIs (Send/Receive/Delete up to 10 at once) to push throughput and cut cost
+
+
+8: A company is migrating a distributed application to AWS. The application serves variable workloads. 
+   The legacy platform consists of a primary server that coordinates jobs across multiple compute nodes. 
+   The company wants to modernize the application with a solution that maximizes resiliency and scalability.
+   How should a solutions architect design the architecture to meet these requirements?
+
+A. Configure an Amazon Simple Queue Service (Amazon SQS) queue as a destination for the jobs. Implement the compute nodes with Amazon EC2 instances that are managed in an Auto Scaling group. Configure EC2 Auto Scaling to use scheduled scaling.
+B. Configure an Amazon Simple Queue Service (Amazon SQS) queue as a destination for the jobs. Implement the compute nodes with Amazon EC2 instances that are managed in an Auto Scaling group. Configure EC2 Auto Scaling based on the size of the queue.
+C. Implement the primary server and the compute nodes with Amazon EC2 instances that are managed in an Auto Scaling group. Configure AWS CloudTrail as a destination for the jobs. Configure EC2 Auto Scaling based on the load on the primary server.
+D. Implement the primary server and the compute nodes with Amazon EC2 instances that are managed in an Auto Scaling group. Configure Amazon EventBridge (Amazon CloudWatch Events) as a destination for the jobs. Configure EC2 Auto Scaling based on the load on the compute nodes.
+
+
+Goal: Get rid of the dependency on the primary coordinator and make scaling automatic
+
+B: By using Amazon SQS as the job queue, producers put jobs directly into the queue.
+Compute nodes (workers) simply pull jobs from SQS, so no need for a central primary server.
+Auto Scaling can scale the number of EC2 workers dynamically based on queue length (e.g., number of pending messages).
+
+Decoupling: Separating producers and consumers with a queue → eliminates tight dependencies.
+
+Amazon SQS: Managed message queue; supports buffering, retries, and dead-letter queues.
+
+EC2 Auto Scaling with SQS metrics: Can use metrics like ApproximateNumberOfMessagesVisible to scale in/out automatically.
+
+Stateless workers: Each worker just processes whatever message it pulls; no dependency on shared local state.
+
+
+9. A company is running an SMB file server in its data center. The file server stores large files that are accessed frequently for the first few days after the files are created. After 7 days the files are rarely accessed.
+   The total data size is increasing and is close to the company's total storage capacity. 
+   A solutions architect must increase the company's available storage space without losing low-latency access to the most recently accessed files. 
+   The solutions architect must also provide file lifecycle management to avoid future storage issues.
+   Which solution will meet these requirements?
+
+A. Use AWS DataSync to copy data that is older than 7 days from the SMB file server to AWS.
+B. Create an Amazon S3 File Gateway to extend the company's storage space. Create an S3 Lifecycle policy to transition the data to S3 Glacier Deep Archive after 7 days.
+C. Create an Amazon FSx for Windows File Server file system to extend the company's storage space.
+D. Install a utility on each user's computer to access Amazon S3. Create an S3 Lifecycle policy to transition the data to S3 Glacier Flexible Retrieval after 7 days
+
+B: Amazon S3 File Gateway exposes an NFS/SMB share on-prem that users/apps can keep using as if it’s local.
+   Frequently accessed files are served from the local cache (low latency), while the full dataset is durably stored in Amazon S3 (virtually unlimited capacity).
+   With an S3 Lifecycle policy, you can automatically move objects after 7 days to a colder, cheaper tier like S3 Glacier Deep Archive, minimizing costs while keeping restore options.
+
+S3 File Gateway: Hybrid storage that presents an NFS/SMB share, caches hot data locally, and stores objects in S3 for scale/durability.
+
+S3 Lifecycle policies: Automated tiering (e.g., S3 Standard → Glacier Deep Archive after 7 days) to control cost as data cools.
+
+Hot vs. Cold data: Serve hot data from low-latency cache; offload cold data to cheaper tiers without changing user workflow.
+
+
+10. A company is building an ecommerce web application on AWS. The application sends information about new orders to an Amazon API Gateway REST API to process. 
+    The company wants to ensure that orders are processed in the order that they are received.
+    Which solution will meet these requirements?
+
+A. Use an API Gateway integration to publish a message to an Amazon Simple Notification Service (Amazon SNS) topic when the application receives an order. Subscribe an AWS Lambda function to the topic to perform processing.
+B. Use an API Gateway integration to send a message to an Amazon Simple Queue Service (Amazon SQS) FIFO queue when the application receives an order. Configure the SQS FIFO queue to invoke an AWS Lambda function for processing.
+C. Use an API Gateway authorizer to block any requests while the application processes an order.
+D. Use an API Gateway integration to send a message to an Amazon Simple Queue Service (Amazon SQS) standard queue when the application receives an order. Configure the SQS standard queue to invoke an AWS Lambda function for processing.
+
+B:SQS FIFO (First-In-First-Out) guarantees messages are processed in the exact order received and supports deduplication.
+API Gateway can send each new order to the FIFO queue; SQS then triggers Lambda to process them in order.
+If you need one global order for all orders, use a single MessageGroupId. If you want ordered streams per customer/cart, use a MessageGroupId per customer/cart (preserves order within each group while enabling parallelism across groups).
+
+Key concept:
+FIFO queue = exactly-once processing (with deduplication) + ordered delivery. Perfect match for “process orders in the order received.”
