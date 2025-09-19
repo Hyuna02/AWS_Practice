@@ -1,0 +1,90 @@
+Instead of installing an application directly on the operating system, containers run the application together with its libraries and settings as a packaged unit.
+In this task, I built a Docker image by adding my own HTML page on top of the httpd:2.4 base image.
+
+The workflow was:
+docker build → docker run → docker ps → curl → verify the result.
+Through this process, I learned how a service works when an image is executed as a container.
+
+AWS ECR (Elastic Container Registry)
+Rather than keeping the Docker image only on my local environment, I uploaded it to ECR, which makes it deployable and accessible in the cloud.
+
+Managing the container lifecycle
+I checked the running containers in the list, stopped and removed them, then verified the image list and demonstrated how to delete an image.
+
+The need for a repository
+By uploading local images to ECR, they can be shared with teammates and pulled into managed services such as ECS or EKS.
+
+Concepts learned
+
+Docker: a container platform that packages applications, libraries, and settings into an image, which can then be executed as a container.
+
+Docker Image: a reusable template (a blueprint). It remains available even if the container is stopped or deleted. Images are built from Dockerfiles.
+
+Docker Container: a running instance of an image (like a house built from a blueprint).
+
+ECR: a Docker image repository provided by AWS for storing, versioning, and deploying container images.
+
+# (1) Set environment variables — avoid typos by reusing these in all commands
+export SID=s4083552
+export REGION=us-east-1
+export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+# (2) Create a working directory and move into it — keep all Task A files organized here
+mkdir -p ~/taskA && cd ~/taskA
+
+# (3) Create the HTML file — this will be served by the Apache container
+# It must include your name and student ID
+cat > ${SID}.html <<EOF
+<!doctype html><html lang="en"><meta charset="utf-8"><title>${SID}</title>
+<h1>Hyuna Bae - ${SID}</h1></html>
+EOF
+
+# (4) Create the Dockerfile — base image httpd:2.4, copy HTML to Apache doc root, expose port 80
+cat > Dockerfile <<'EOF'
+FROM httpd:2.4
+COPY s1234567.html /usr/local/apache2/htdocs/
+EXPOSE 80
+EOF
+
+# (5) Replace placeholder student ID with the actual one in the Dockerfile
+sed -i "s/s4083552/${SID}/g" Dockerfile
+
+# (6) Build the Docker image — tag it with your student ID
+docker build -t ${SID} .
+
+# (7) Run the container — background mode (-d), map host port 8080 to container port 80, name: studentID_1
+docker run -d -p 8080:80 --name ${SID}_1 ${SID}
+
+# (8) List running containers — verify the container name and port mapping
+docker ps
+
+# (9) Test with curl — should return the HTML with your name and student ID
+curl -s http://localhost:8080/${SID}.html
+
+# (10) Create an ECR repository — name must follow format ecr-studentID-repo
+aws ecr create-repository --repository-name ecr-${SID}-repo --region ${REGION}
+
+# (11) Authenticate Docker with ECR — required before pushing images
+aws ecr get-login-password --region ${REGION} \
+ | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com
+
+# (12) Tag the image for ECR — link local image with the ECR repository URI
+docker tag ${SID}:latest ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/ecr-${SID}-repo:latest
+
+# (13) Push the image to ECR — output should end with a digest line (sha256:…)
+docker push ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/ecr-${SID}-repo:latest
+
+# (14) List all containers — show running and stopped containers before cleanup
+docker ps -a
+
+# (15) Stop and remove the container — cleanup process
+CID=$(docker ps -aq --filter "name=${SID}_1"); docker stop "$CID"; docker rm "$CID"
+
+# (16) Confirm container removal — list should no longer show the container
+docker ps -a
+
+# (17) List all local images
+docker images
+
+# (18) (Optional) Show the command to remove the image — required by assignment spec
+# docker rmi ${SID}:latest
