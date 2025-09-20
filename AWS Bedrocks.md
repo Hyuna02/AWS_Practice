@@ -30,4 +30,4 @@
 
 ---
 
-![AWS Bedrock](https://raw.githubusercontent.com/Hyuna02/AWS_Practice/main/ExploretheAmazonBedrockPlaygrounds.png)
+![AWS Bedrock](https://github.com/Hyuna02/AWS_Practice/blob/main/ExploretheAmazonBedrockPlaygrounds.png)
